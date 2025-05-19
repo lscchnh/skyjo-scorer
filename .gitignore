@@ -52,3 +52,8 @@ CodeCoverage/
 *.VisualState.xml
 TestResult.xml
 nunit-*.xml
+skyjo-scorer/.config
+skyjo-scorer/.vs
+skyjo-scorer/Properties/serviceDependencies.local.json
+skyjo-scorer/Properties/serviceDependencies.local.json.user
+skyjo-scorer/appsettings.Development.json
