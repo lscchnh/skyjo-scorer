@@ -1,0 +1,226 @@
+﻿@page "/games"
+@using Models
+@using Models.Dto
+@inject HttpClient Http
+@rendermode InteractiveServer
+
+<EditForm Model="@newGame" OnValidSubmit="@AddGameAsync" FormName="AddGame">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+    <h4>Add a game</h4>
+    @foreach (var playerScore in newGame.PlayerScores)
+    {
+        <div class="mb-3 d-flex gap-2">
+            <InputText @bind-Value="playerScore.PlayerName"
+            class="form-control"
+            list="playerNamesDatalist"
+            placeholder="Enter or select player name" />
+            <InputNumber @bind-Value="playerScore.Score" placeholder="Score" class="form-control" />
+            <button type="button" class="btn btn-danger" @onclick="() => RemovePlayer(playerScore)">✕</button>
+        </div>
+    }
+    <div>
+        <button type="button" class="btn btn-secondary mb-3" @onclick="AddPlayer">Add Player</button>
+        <button type="submit" class="btn btn-primary mb-3" disabled="@(!IsFormValid())">Save Game</button>
+
+    </div>
+</EditForm>
+
+<datalist id="playerNamesDatalist">
+    @foreach (var name in playerNames)
+    {
+        <option value="@name"></option>
+    }
+</datalist>
+
+@if (successMessage is not null)
+{
+    <div class="alert alert-info mt-3 alert-dismissible fade show">
+        @successMessage
+        <button type="button" class="btn-close" aria-label="Close" @onclick="() => CloseMessage()"></button>
+    </div>
+}
+
+@if (errorMessage is not null)
+{
+    <div class="alert alert-danger mt-3 alert-dismissible fade show">
+        @errorMessage
+        <button type="button" class="btn-close" aria-label="Close" @onclick="() => CloseMessage()"></button>
+    </div>
+}
+
+<h5 class="mt-4">Games History (@games?.Count games)</h5>
+<div class="mb-3">
+    <select id="yearFilter" class="form-select" @onchange="OnYearChanged">
+        <option value="">All Years</option>
+        <option value=2024>2024</option>
+        <option value=2025>2025</option>
+    </select>
+</div>
+
+@if (games == null)
+{
+    <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading games...</span>
+    </div>
+}
+else if(games.Count == 0)
+{
+    <p class="mt-4">No games recorded yet.</p>
+}
+else
+{
+    <div class="row row-cols-1 g-4">
+        @foreach (var game in games.OrderByDescending(g => g.PlayedOn))
+        {
+            var bestScore = game.PlayerScores.Min(ps => ps.Value);
+
+            <div class="col">
+                <div class="card shadow-sm">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong>@game.PlayedOn.ToLocalTime().ToString("yyyy-MM-dd")</strong>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-danger" title="Delete Game" @onclick="() => DeleteGame(game.Number)">✕</button>
+                    </div>
+                    <ul class="list-group list-group-flush">
+                        @foreach (var ps in game.PlayerScores.OrderBy(ps => ps.Value))
+                        {
+                            var isWinner = ps.Value == bestScore;
+                            <li class="list-group-item d-flex justify-content-between align-items-center @(isWinner ? "bg-light" : null)">
+                                <span>@(isWinner ? "🥇 " : "")@ps.Key</span>
+                                <span>@ps.Value</span>
+                            </li>
+                        }
+                    </ul>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    private List<GameDto>? games;
+    private List<string> playerNames = [];
+    private AddGameRequest newGame = new();
+    private string? successMessage;
+    private string? errorMessage;
+    private int? selectedYear;
+    private bool isInitialized = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !isInitialized)
+        {
+            await Initialize();
+        }
+    }
+
+    private async Task Initialize()
+    {
+        newGame = new();
+        AddPlayer();
+        AddPlayer();
+        await LoadGamesAsync();
+        await LoadPlayersAsync();
+        StateHasChanged();
+    }
+
+    public void AddPlayer()
+    {
+        newGame.PlayerScores.Add(new AddPlayerScore());
+    }
+
+    private void RemovePlayer(AddPlayerScore playerScore)
+    {
+        newGame.PlayerScores.Remove(playerScore);
+    }     
+
+    private async Task LoadGamesAsync()
+    {
+        try
+        {
+            string query = "/api/games" + (selectedYear.HasValue ? $"?year={selectedYear}" : null);
+            games = await Http.GetFromJsonAsync<List<GameDto>>(query) ?? [];
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Failed to load games: {ex.Message}";
+        }
+    }
+
+    private async Task LoadPlayersAsync()
+    {
+        try
+        {
+            var players = await Http.GetFromJsonAsync<List<PlayerDto>>("/api/players") ?? [];
+            playerNames = players.Select(p => p.Name).ToList();            
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Failed to load players: {ex.Message}";
+        }
+    }
+
+    private async Task AddGameAsync()
+    {
+        var response = await Http.PostAsJsonAsync("/api/games", newGame);
+        if (response.IsSuccessStatusCode)
+        {
+            successMessage = "Game saved successfully!";
+
+            await Initialize();
+        }
+        else
+        {
+            errorMessage = "Failed to save game.";
+        }
+    }
+
+    private async Task DeleteGame(int gameNumber)
+    {
+        var response = await Http.DeleteAsync($"/api/games/{gameNumber}");
+        if (response.IsSuccessStatusCode)
+        {
+            successMessage = "Game deleted successfully!";
+
+            await Initialize();
+        }
+        else
+        {
+            errorMessage = "Failed to delete game.";
+        }
+    }
+
+    private async Task OnYearChanged(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString();
+
+        if (int.TryParse(value, out int parsedYear))
+        {
+            selectedYear = parsedYear;
+        }
+        else
+        {
+            selectedYear = null;
+        }
+
+        await LoadGamesAsync();
+    }
+
+    private bool IsFormValid()
+    {
+        var playerNames = newGame.PlayerScores.Select(ps => ps.PlayerName.Trim().ToLowerInvariant()).ToList();
+        bool hasEmptyNames = playerNames.Any(string.IsNullOrWhiteSpace);
+        bool hasDuplicates = playerNames.Distinct().Count() != playerNames.Count;
+        bool validPlayerCount = newGame.PlayerScores.Count is >= 2 and <= 8;
+
+        return !hasEmptyNames && !hasDuplicates && validPlayerCount;
+    }
+
+    private void CloseMessage()
+    {
+        successMessage = null;
+        errorMessage = null;
+    }
+}

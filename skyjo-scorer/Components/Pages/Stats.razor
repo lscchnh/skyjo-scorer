@@ -1,0 +1,104 @@
+﻿@page "/stats"
+@inject HttpClient Http
+@using Models.Dto
+@rendermode InteractiveServer
+
+<h3>Player Statistics</h3>
+<div class="mb-3">
+    <select id="yearFilter" class="form-select" @onchange="OnYearChanged">
+        <option value="">All Years</option>
+        <option value=2024>2024</option>
+        <option value=2025>2025</option>
+    </select>
+</div>
+
+@if (message is not null)
+{
+    <div class="alert alert-info mt-3">@message</div>
+}
+
+@if (players is null)
+{
+    <div class="spinner-border text-primary" role="status">
+        <span class="visually-hidden">Loading stats...</span>
+    </div>
+}
+else if (players.Count == 0)
+{
+    <p>No games recorded yet.</p>
+}
+else
+{
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>#</th>
+                <th>Name</th>
+                <th>Games Played</th>
+                <th>Average Score</th>
+            </tr>
+        </thead>
+        <tbody>
+            @for (int i = 0; i < players.Count; i++)
+            {
+                <tr>
+                    <td>@(i + 1)</td>
+                    <td>
+                        <span>@(i == 0 ? "🥇 " : "")</span>
+                        @players[i].Name</td>
+                    <td>@players[i].TotalGames</td>
+                    <td>@players[i].AverageScore.ToString("0.00")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<PlayerDto>? players;
+    private int? selectedYear;
+    private string? message;
+
+    private bool isInitialized = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !isInitialized)
+        {
+            isInitialized = true;
+            await LoadPlayersAsync();
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadPlayersAsync()
+    {
+        try
+        {
+            string query = "/api/players" + (selectedYear.HasValue ? $"?year={selectedYear}" : null);
+            players = (await Http.GetFromJsonAsync<List<PlayerDto>>(query) ?? [])
+            .OrderBy(p => p.AverageScore)
+            .ToList();
+        }
+        catch (Exception ex)
+        {
+            message = $"Failed to load players: {ex.Message}";
+        }
+    }
+
+    private async Task OnYearChanged(ChangeEventArgs e)
+    {
+        var value = e.Value?.ToString();
+
+        if (int.TryParse(value, out int parsedYear))
+        {
+            selectedYear = parsedYear;
+        }
+        else
+        {
+            selectedYear = null;
+        }
+
+        await LoadPlayersAsync();
+    }
+}
